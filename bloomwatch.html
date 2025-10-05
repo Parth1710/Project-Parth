@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BloomWatch - A Global Phenology Explorer</title>
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --nasa-blue: #0b3d91;
+            --dark-bg: #1e1e1e;
+            --panel-bg: #2a2a2a;
+            --text-color: #e0e0e0;
+            --highlight-color: #3498db;
+            --border-color: #444;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        #header {
+            background-color: var(--nasa-blue);
+            color: white;
+            padding: 12px 25px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            z-index: 1001;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #header h1 {
+            margin: 0;
+            font-size: 1.8em;
+            font-weight: 400;
+        }
+
+        #main-content {
+            display: flex;
+            flex: 1;
+        }
+        
+        #controls {
+            width: 350px;
+            background-color: var(--panel-bg);
+            padding: 20px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow-y: auto;
+            border-right: 1px solid var(--border-color);
+        }
+
+        #controls h2 {
+            margin-top: 0;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+            font-weight: 300;
+            font-size: 1.8em;
+            color: var(--highlight-color);
+        }
+
+        .control-group { margin-bottom: 25px; }
+        .control-group label { display: block; margin-bottom: 10px; font-weight: 700; font-size: 1.1em; }
+        .control-group input, .control-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background-color: #3d3d3d;
+            color: var(--text-color);
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+
+        .poi-button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 8px;
+            background-color: var(--highlight-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: left;
+            transition: background-color 0.2s ease;
+        }
+        .poi-button:hover { background-color: #5dade2; }
+
+        #map-container {
+            flex: 1;
+            position: relative;
+        }
+        #map { width: 100%; height: 100%; }
+        .leaflet-container { background: var(--dark-bg); }
+
+        #loading-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background-color: rgba(0,0,0,0.75);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 2000;
+            display: none;
+            font-size: 1.1em;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 30px;
+            right: 10px;
+            background-color: rgba(42, 42, 42, 0.85);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+        #legend h4 { margin: 0 0 5px 0; text-align: center; }
+        .legend-gradient {
+            width: 200px;
+            height: 20px;
+            background: linear-gradient(to right, #dcdcdc, #a5a5a5, #787878, #4b4b4b, #323232, #283228, #3c503c, #507850, #64a064, #78c878, #8ce88c, #a0ff a0, #beffbe);
+            border: 1px solid #555;
+        }
+        .legend-labels { display: flex; justify-content: space-between; font-size: 0.8em; }
+
+        #coords {
+            position: absolute;
+            bottom: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            z-index: 1000;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <h1>BloomWatch</h1>
+    </div>
+
+    <div id="main-content">
+        <div id="controls">
+            <h2>Explorer Controls</h2>
+            
+            <div class="control-group">
+                <label for="date-picker">Select Date</label>
+                <input type="date" id="date-picker">
+            </div>
+
+            <div class="control-group">
+                <label for="layer-select">Select Data Layer</label>
+                <select id="layer-select">
+                    <option value="MODIS_Terra_NDVI_8Day">🌱 Plant Health (NDVI)</option>
+                    <option value="CorrectedReflectance_TrueColor">🌍 True Color (MODIS)</option>
+                    <option value="VIIRS_SNPP_CorrectedReflectance_TrueColor">🛰️ True Color (VIIRS HD)</option>
+                    <option value="MODIS_Terra_Land_Surface_Temp_Day">🌡️ Land Surface Temp (Day)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Points of Interest</label>
+                <div id="poi-buttons"></div>
+            </div>
+
+             <p style="font-size: 0.85em; color: #aaa; font-weight: 300; line-height: 1.5;">
+                <strong>How to use:</strong><br>
+                Click a "Point of Interest" to jump to a notable event. Use the "Plant Health" layer to find dense vegetation (bright green) and then switch to a "True Color" layer to visually confirm a bloom.
+            </p>
+        </div>
+
+        <div id="map-container">
+            <div id="map"></div>
+            <div id="loading-indicator">Loading Imagery...</div>
+            <div id="legend">
+                <h4>NDVI - Plant Health</h4>
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                    <span>Sparse</span>
+                    <span>Dense</span>
+                </div>
+            </div>
+            <div id="coords">Lat: 0.00, Lng: 0.00</div>
+        </div>
+    </div>
+    
+    <script>
+        // --- DATA: Points of Interest ---
+        const pointsOfInterest = [
+            { name: 'California Superbloom', lat: 35.0, lon: -117.5, zoom: 7, date: '2019-03-28' },
+            { name: 'Japan Cherry Blossoms', lat: 35.6, lon: 139.7, zoom: 6, date: '2023-03-26' },
+            { name: 'W. Australia Wildflowers', lat: -28.0, lon: 116.5, zoom: 6, date: '2021-08-15' },
+            { name: 'Himalayan Bloom', lat: 30.3, lon: 79.5, zoom: 9, date: '2023-04-10' }
+        ];
+
+        // --- MAP INITIALIZATION ---
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        // --- UI ELEMENT REFERENCES ---
+        const datePicker = document.getElementById('date-picker');
+        const layerSelect = document.getElementById('layer-select');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const legend = document.getElementById('legend');
+        const poiButtonsContainer = document.getElementById('poi-buttons');
+        const coordsDisplay = document.getElementById('coords');
+
+        let currentNasaLayer = null;
+
+        // --- CORE FUNCTIONS ---
+        function getFormattedDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function updateLegend() {
+            if (layerSelect.value === 'MODIS_Terra_NDVI_8Day') {
+                legend.style.display = 'block';
+            } else {
+                legend.style.display = 'none';
+            }
+        }
+        
+        function updateMap() {
+            loadingIndicator.style.display = 'block';
+            if (currentNasaLayer) map.removeLayer(currentNasaLayer);
+
+            const selectedDate = datePicker.value;
+            const selectedLayer = layerSelect.value;
+            
+            const tileUrl = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${selectedLayer}/default/${selectedDate}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+
+            currentNasaLayer = L.tileLayer(tileUrl, {
+                attribution: '<a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a>',
+                maxZoom: 9
+            });
+
+            currentNasaLayer.on('loading', () => loadingIndicator.style.display = 'block');
+            currentNasaLayer.on('load', () => loadingIndicator.style.display = 'none');
+            currentNasaLayer.addTo(map);
+
+            updateLegend();
+        }
+
+        function goToPOI(poi) {
+            map.setView([poi.lat, poi.lon], poi.zoom);
+            datePicker.value = poi.date;
+            updateMap();
+        }
+
+        // --- SETUP AND EVENT LISTENERS ---
+        // Populate POI buttons
+        pointsOfInterest.forEach(poi => {
+            const button = document.createElement('button');
+            button.className = 'poi-button';
+            button.innerText = poi.name;
+            button.onclick = () => goToPOI(poi);
+            poiButtonsContainer.appendChild(button);
+        });
+
+        // Set up main event listeners
+        datePicker.addEventListener('change', updateMap);
+        layerSelect.addEventListener('change', updateMap);
+        
+        // Mouse coordinate display
+        map.on('mousemove', (e) => {
+            coordsDisplay.textContent = `Lat: ${e.latlng.lat.toFixed(2)}, Lng: ${e.latlng.lng.toFixed(2)}`;
+        });
+
+        // --- INITIALIZE THE APP ---
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 2);
+        datePicker.value = getFormattedDate(yesterday);
+        
+        updateMap();
+        
+    </script>
+</body>
+</html>
